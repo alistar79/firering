@@ -49,11 +49,44 @@ module Firering
       parameters
     end
 
+    def connection_opts
+      if ENV['HTTPS_PROXY']
+        http_proxy="HTTPS_PROXY"
+      elsif ENV['https_proxy']
+        http_proxy="https_proxy"
+      elsif ENV['HTTP_PROXY']
+        http_proxy="HTTP_PROXY"
+      elsif ENV['http_proxy']
+        http_proxy="http_proxy"
+      end
+      if http_proxy
+        url=ENV[http_proxy].split('@').last.split('/').last.split(':').first
+        if ENV[http_proxy].split('@').last.split(':').last =~ /\A[+-]?\d+?(\.\d+)?\Z/
+          port=ENV[http_proxy].split('@').last.split(':').last.to_i
+        end
+        if not ENV[http_proxy].split('@').last.include? ENV[http_proxy].split('@').first.split('/').last.split(':').first
+          username=ENV[http_proxy].split('@').first.split('/').last.split(':').first
+          password=ENV[http_proxy].split('@').first.split('/').last.split(':').last
+        end
+        connection_opts = {
+          :proxy => {
+            :host => url,
+            :port => port,
+            :authorization => [username, password]
+          }
+        }
+      end
+    end
+
     def http(method, path, data = nil, &callback)
       uri = host.join(path)
       logger.info("performing request to #{uri}")
 
-      http = EventMachine::HttpRequest.new(uri).send(method, parameters(data))
+      if connection_opts
+        http = EventMachine::HttpRequest.new(uri, connection_opts).send(method, parameters(data))
+      else
+        http = EventMachine::HttpRequest.new(uri).send(method, parameters(data))
+      end
 
       http.errback do
         perform_retry(http) do
